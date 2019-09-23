@@ -1,5 +1,8 @@
 version: 2.1
 
+orbs:
+  codecov: codecov/codecov@1.0.2
+
 jobs:
   "elixir-1_8":
     docker:
@@ -47,7 +50,8 @@ jobs:
       #     paths:
       #       - _build/dev
 
-      - run: MIX_ENV=test mix coveralls.circle
+      - codecov/upload:
+          file: {{ coverage_report_filepath }}
 
       - store_artifacts:
           path: apps/tai/log
@@ -100,7 +104,8 @@ jobs:
       #     paths:
       #       - _build/dev
 
-      - run: MIX_ENV=test mix coveralls.circle
+      - codecov/upload:
+          file: {{ coverage_report_filepath }}
 
       - store_artifacts:
           path: apps/tai/log

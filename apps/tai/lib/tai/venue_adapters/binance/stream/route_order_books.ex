@@ -29,8 +29,8 @@ defmodule Tai.VenueAdapters.Binance.Stream.RouteOrderBooks do
 
   def handle_cast(
         {%{
-           "data" => %{"e" => "depthUpdate", "s" => venue_symbol} = data,
-           "stream" => _stream_name
+           "data" => %{"s" => venue_symbol} = data,
+           "stream" => "btcusdt@depth20@100ms"
          }, received_at},
         state
       ) do

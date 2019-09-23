@@ -47,12 +47,13 @@ defmodule Tai.VenueAdapters.Binance.StreamSupervisor do
   # TODO: Make these configurable
   @endpoint "wss://stream.binance.com:9443/stream"
   @update_speed 100
+  @depth_level 20
   defp url(products) do
     streams =
       products
       |> Enum.map(& &1.venue_symbol)
       |> Enum.map(&String.downcase/1)
-      |> Enum.map(&"#{&1}@depth@#{@update_speed}ms")
+      |> Enum.map(&"#{&1}@depth#{@depth_level}@#{@update_speed}ms")
       |> Enum.join("/")
 
     "#{@endpoint}?streams=#{streams}"

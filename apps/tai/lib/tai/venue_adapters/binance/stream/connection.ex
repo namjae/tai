@@ -62,11 +62,11 @@ defmodule Tai.VenueAdapters.Binance.Stream.Connection do
 
   def handle_frame(_frame, state), do: {:ok, state}
 
-  @price_levels 5
+  @depth_level 20
   defp snapshot_order_books(products) do
     products
     |> Enum.map(fn product ->
-      with {:ok, snapshot} <- Stream.Snapshot.fetch(product, @price_levels) do
+      with {:ok, snapshot} <- Stream.Snapshot.fetch(product, @depth_level) do
         :ok = Tai.Markets.OrderBook.replace(snapshot)
       else
         {:error, reason} -> raise reason
@@ -74,7 +74,7 @@ defmodule Tai.VenueAdapters.Binance.Stream.Connection do
     end)
   end
 
-  defp handle_msg(%{"data" => %{"e" => "depthUpdate"}} = msg, state) do
+  defp handle_msg(%{"stream" => "btcusdt@depth20@100ms"} = msg, state) do
     msg |> forward(:order_books, state)
   end
 

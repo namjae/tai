@@ -24,9 +24,6 @@ defmodule Tai.VenueAdapters.Binance.StreamSupervisor do
     Supervisor.start_link(__MODULE__, args, name: :"#{__MODULE__}_#{venue_id}")
   end
 
-  # TODO: Make this configurable
-  @base_url "wss://stream.binance.com:9443/stream"
-
   def init(venue_id: venue_id, channels: _, accounts: accounts, products: products, opts: _) do
     order_books = build_order_books(products)
     order_book_stores = build_order_book_stores(products)
@@ -47,15 +44,18 @@ defmodule Tai.VenueAdapters.Binance.StreamSupervisor do
     |> Supervisor.init(strategy: :one_for_one)
   end
 
+  # TODO: Make these configurable
+  @endpoint "wss://stream.binance.com:9443/stream"
+  @update_speed 100
   defp url(products) do
     streams =
       products
       |> Enum.map(& &1.venue_symbol)
       |> Enum.map(&String.downcase/1)
-      |> Enum.map(&"#{&1}@depth")
+      |> Enum.map(&"#{&1}@depth@#{@update_speed}ms")
       |> Enum.join("/")
 
-    "#{@base_url}?streams=#{streams}"
+    "#{@endpoint}?streams=#{streams}"
   end
 
   # TODO: Potentially this could use new order books? Send the change quote

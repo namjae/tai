@@ -84,6 +84,7 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
   end
 
   def handle_info(:init_subscriptions, state) do
+    send(self(), {:subscribe, :heartbeat})
     send(self(), {:subscribe, :depth})
     {:ok, state}
   end
@@ -98,12 +99,39 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
       }
       |> Jason.encode!()
 
-    send(self(), {:send_msg, msg})
+    # send(self(), {:send_msg, msg})
+    # {:ok, state}
+    {:reply, {:text, msg}, state}
+  end
+
+  @heartbeat_interval_s 20
+  def handle_info({:subscribe, :heartbeat}, state) do
+    # schedule_heartbeat()
+
+    msg =
+      %{
+        "method" => "public/set_heartbeat",
+        "params" => %{"interval" => @heartbeat_interval_s}
+      }
+      |> Jason.encode!()
+
+    # send(self(), {:send_msg, msg})
+    # {:ok, state}
+    {:reply, {:text, msg}, state}
+  end
+
+  # def handle_info(:heartbeat, state) do
+  #   {:reply, :ping, state}
+  # end
+
+  # def handle_info({:send_msg, msg}, state), do: {:reply, {:text, msg}, state}
+
+  def handle_info(msg, state) do
+    require Logger
+    Logger.error("!!!!!!!!! catch all - msg: #{inspect(msg)}")
 
     {:ok, state}
   end
-
-  def handle_info({:send_msg, msg}, state), do: {:reply, {:text, msg}, state}
 
   def handle_frame({:text, msg}, state) do
     msg
@@ -115,7 +143,13 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
 
   def handle_frame(_frame, state), do: {:ok, state}
 
-  defp handle_msg(%{"result" => _result}, _state), do: nil
+  # @heartbeat_ms 20_000
+  # defp schedule_heartbeat, do: Process.send_after(self(), :heartbeat, @heartbeat_ms)
+
+  defp handle_msg(%{"result" => _result} = msg, _state) do
+    require Logger
+    Logger.info(".......... subscription result msg: #{inspect(msg)}")
+  end
 
   defp handle_msg(
          %{
@@ -125,6 +159,36 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
          state
        ) do
     msg |> forward(:order_books, state)
+  end
+
+  defp handle_msg(
+         %{
+           "method" => "heartbeat",
+           "params" => %{"type" => "heartbeat"}
+         },
+         _state
+       ) do
+    require Logger
+    Logger.warn("********** HEARTBEAT")
+  end
+
+  defp handle_msg(
+         %{
+           "method" => "heartbeat",
+           "params" => %{"type" => "test_request"}
+         },
+         _state
+       ) do
+    require Logger
+    Logger.warn("********** HEARTBEAT test request")
+  end
+
+  defp handle_msg(
+         msg,
+         _state
+       ) do
+    require Logger
+    Logger.error("!!!!!!!!!!!!! HANDLE msg catch all: #{inspect(msg)}")
   end
 
   defp forward(msg, to, state) do

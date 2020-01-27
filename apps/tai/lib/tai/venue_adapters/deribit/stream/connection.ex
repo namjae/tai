@@ -24,8 +24,27 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
             }
           }
 
-    @enforce_keys ~w(venue routes channels products quote_depth opts jsonrpc_id jsonrpc_requests)a
-    defstruct ~w(venue routes channels credential products quote_depth opts last_heartbeat jsonrpc_id jsonrpc_requests)a
+    @enforce_keys ~w(
+      venue
+      routes
+      channels
+      products
+      quote_depth
+      opts
+      jsonrpc_id
+      jsonrpc_requests
+    )a
+    defstruct ~w(
+      venue routes
+      channels
+      credential
+      products
+      quote_depth
+      opts
+      last_heartbeat
+      jsonrpc_id
+      jsonrpc_requests
+    )a
   end
 
   @type product :: Tai.Venues.Product.t()
@@ -93,25 +112,8 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
   def handle_info(:init_subscriptions, state) do
     send(self(), {:subscribe, :heartbeat})
     send(self(), {:subscribe, :depth})
+    if state.credential, do: send(self(), {:subscribe, :authenticate})
     {:ok, state}
-  end
-
-  def handle_info({:subscribe, :depth}, state) do
-    channels = state.products |> Enum.map(&"book.#{&1.venue_symbol}.none.20.100ms")
-
-    msg =
-      %{
-        method: "public/subscribe",
-        id: state.jsonrpc_id,
-        params: %{
-          channels: channels
-        }
-      }
-      |> Jason.encode!()
-
-    state = state |> add_jsonrpc_request()
-
-    {:reply, {:text, msg}, state}
   end
 
   @heartbeat_interval_s 10
@@ -134,6 +136,51 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
     {:reply, {:text, msg}, state}
   end
 
+  def handle_info({:subscribe, :depth}, state) do
+    channels = state.products |> Enum.map(&"book.#{&1.venue_symbol}.none.20.100ms")
+
+    msg =
+      %{
+        method: "public/subscribe",
+        id: state.jsonrpc_id,
+        params: %{
+          channels: channels
+        }
+      }
+      |> Jason.encode!()
+
+    state = state |> add_jsonrpc_request()
+
+    {:reply, {:text, msg}, state}
+  end
+
+  def handle_info({:subscribe, :authenticate}, state) do
+    data = ""
+    timestamp = ExDeribit.Auth.timestamp()
+    nonce = ExDeribit.Auth.nonce()
+    {_, credential} = state.credential
+    signature = ExDeribit.Auth.sign(credential.client_secret, timestamp, nonce, data)
+
+    msg =
+      %{
+        method: "public/auth",
+        id: state.jsonrpc_id,
+        params: %{
+          grant_type: "client_signature",
+          client_id: credential.client_id,
+          timestamp: timestamp,
+          signature: signature,
+          nonce: nonce,
+          data: data
+        }
+      }
+      |> Jason.encode!()
+
+    state = state |> add_jsonrpc_request()
+
+    {:reply, {:text, msg}, state}
+  end
+
   def handle_frame({:text, msg}, state) do
     msg
     |> Jason.decode!()
@@ -142,7 +189,40 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
 
   def handle_frame(_frame, state), do: {:ok, state}
 
-  defp handle_msg(%{"id" => id, "result" => _}, state) do
+  defp handle_msg(
+         %{"id" => id, "result" => %{"access_token" => access_token}},
+         state
+       ) do
+    # TODO: These assets need to come from accounts
+    # channels = state.products |> Enum.map(&"user.portfolio.#{&1.venue_symbol}")
+    channels = ["btc", "eth"] |> Enum.map(&"user.portfolio.#{&1}")
+
+    msg =
+      %{
+        method: "private/subscribe",
+        id: state.jsonrpc_id,
+        params: %{
+          access_token: access_token,
+          channels: channels
+        }
+      }
+      |> Jason.encode!()
+
+    state =
+      state
+      |> delete_jsonrpc_request(id)
+      |> add_jsonrpc_request()
+
+    require Logger
+    Logger.info("&&&&&&&&&&&&&&&&& public auth response. private/subscribe msg: #{inspect(msg)}")
+
+    {:reply, {:text, msg}, state}
+  end
+
+  defp handle_msg(%{"id" => id, "result" => _} = msg, state) do
+    require Logger
+    Logger.info("*********** result msg: #{inspect(msg)}")
+
     state = delete_jsonrpc_request(state, id)
     {:ok, state}
   end
@@ -191,6 +271,29 @@ defmodule Tai.VenueAdapters.Deribit.Stream.Connection do
     state = state |> add_jsonrpc_request()
 
     {:reply, {:text, msg}, state}
+  end
+
+  defp handle_msg(
+         %{
+           "params" => %{
+             "data" => _data,
+             "channel" => "user.portfolio." <> _venue_asset
+           },
+           "method" => "subscription"
+         } = msg,
+         state
+       ) do
+    require Logger
+    Logger.info("----------------- User portfolio - msg: #{inspect(msg)}")
+
+    {:ok, state}
+  end
+
+  defp handle_msg(msg, state) do
+    require Logger
+    Logger.info("================= CATCH ALL - msg: #{inspect(msg)}")
+
+    {:ok, state}
   end
 
   defp forward(msg, to, state) do
